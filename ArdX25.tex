@@ -5,7 +5,7 @@
 \usepackage{color}
 \usepackage{hyperref}
 
-<< pygments['pastie.tex'] >>
+% << pygments['pastie.tex'] >>
 
 
 \title{APRS: An Implementor's Perspective}
@@ -13,16 +13,283 @@
 
 \begin{document}
 
+\newcommand{\aprs}{APRS\texttrademark}
+
+
+
 \maketitle
 
 
 \section{Introduction}
+This document is a recap of my experiences implementing packet radio
+on the AVR/Arduino platform.  Its goal is to document the process, as
+well as offering some exposition (and hopefully insight) on the
+various techniques used in the process of the build.
 
-This is an introduction, blah blah blah TK
 
-Touch.
+\section{What is Packet Radio?}
 
-<< d['ax25encoder.cpp|idio|l']['foo'] >>
+Packet Radio is a set of technologies for sending data over amateur
+radio connections.  The particular technologies used here are
+equivalent to a 1200 baud modem, which is still relatively fast in the
+ham radio world.
 
+\section{Reviewing Other Implementations}
+
+The first question any responsible engineer (or lazy hobbyist) asks
+themself is: ``Has someone already solved this?''  After a bit of
+googling, I found a couple of existing AVR \aprs /Packet Radio
+projects and had a look at them.
+
+\subsection{A Philosophical Diversion}
+
+(Skip this section if you're not interested in the philosophical take
+behind my kit-making business.  It's really only of interest to other
+kit makers, but I leave it here out of selfish conceit.)
+
+The goal of my project is to make an AVR-based TNC that can be easily
+duplicated by others, and may or may not make a compelling kit for my
+company to sell.  With that in mind, there are a few principles that
+are worth mentioning:
+
+\begin{enumerate}
+\item Hackability: the device should be transparent and open-ended.
+\item Free/Open Source license: this is going to be Open Source Hardware,
+  and I want the code to be Open Source as well (ideally GPL).
+\item Beauty: because aesthetics always matter
+\item Approachable: people should be able to learn how the device
+  works, even if they're totally new
+\end{enumerate}
+
+So, as I looked at other projects, I had a few criteria in mind for
+their acceptability.  Some of these are rules of thumb, but most of
+them are there to enforce one of the principles above.
+
+\begin{enumerate}
+\item Component count: the fewer parts the better.
+\begin{itemize}
+\item Hackability: Fewer components leads to simpler designs; simpler
+  designs are easier to extend.
+\item Approachability: Simpler designs are easier to explain to people
+  who don't know a whole lot.  They may not be able to extend them
+  from their knowledge, but they're going to feel a better sense of
+  ownership, and be more motivated to learn more.
+\end{itemize}
+
+\item Simple algorithms/structures: this is not a complicated problem; using
+  complicated techniques is probably not needed.
+\begin{itemize}
+\item Hackability: This is the software equivalent of the component
+  count criterion.
+\item Approachability: Ditto.
+\end{itemize}
+
+\item Understandable code: the world needs more beautiful
+  microcontroller code.
+\begin{itemize}
+\item Beauty: This is kind of self-explanatory, right?
+\item Hackability: There is very little more frustrating than picking
+  your way through someone's awful spaghetti code to make it do
+  something slightly different.  Most of the microcontroller code I've
+  seen on the web is bad.  As in, it's the least-approachable code
+  I've seen outside of academia.  We can do better as a community.
+\item Approachability: Beautiful code makes microcontrollers a lot
+  more approachable and usable by the programmer community.  A large
+  part of learning to code is cutting and pasting someone else's code,
+  then experimenting with various tweaks.  Well-written code is
+  amenable to changes by people without a mental model of the whole
+  system.
+\end{itemize}
+
+\item Frugal code: if there's no CPU left for people to hook in new
+  features, this is a closed-ended device.
+\begin{itemize}
+\item Beauty: the most beautiful code is often the shortest code.  The
+  shortest code is often the fastest code.
+\item Hackability: if someone wants to use this device as a platform,
+  they need to have some CPU to spare to do so.  It's just evil to
+  make them optimize our code for us, so they can fit theirs in.
+\item Approachability: new embedded coders are, shall we say,
+  ``relaxed'' about wasting CPU cycles or memory on bad
+  algorithms.  Instead of forcing them to climb the very steep
+  learning curve before they've had any success, we should endeavor to
+  give them as much opportunity to succeed as we can.
+\end{itemize}
+
+\end{enumerate}
+
+
+\subsection{Evaluation Criteria}
+
+So, with all that out of the way, here are the criteria I used to
+evaluate the existing implementations I found:
+\begin{enumerate}
+\item \label{criteria:components} How many components does it need to?
+\item \label{criteria:frugality} How frugal is the code, in both time
+  and space?
+\item \label{criteria:approachability} How approachable is the software?
+\item \label{criteria:license} Is it available in an open-source license?
+\end{enumerate}
+
+
+\subsection{Features Desired}
+
+There are a handful of features the device should have:
+
+\begin{itemize}
+\item Full KISS-mode TNC: KISS is a TNC-control protocol\cite{KISS}
+\item TTL-level serial interface; probably with a designed-in spot for
+  RS-232 and DB-9 (DTE pinout, on-board jumpers for DCE/DTE?)
+\item Audio modulation for packet transmission, respecting DCD
+\item Audio demodulation for packet reception
+\item Push-to-talk button support
+\end{itemize}
+
+\subsection{WhereAVR}
+
+WhereAVR\cite{WhereAVR} is a project by Gary Dion (N4TXI) that
+implements a fairly clean design, with a lot of nice features.  It is
+actually a fairly nice design.  It has a modulator and demodulator, as
+well as a GPS parsing interface within it.  
+
+\subsubsection{Missing Features}
+
+Before getting ahead of ourselves, let's be clear: WhereAVR doesn't
+actually solve the problem at hand.  That is: it's not a packet TNC,
+it's ``just'' an \aprs transmitter.  It implements a receive function,
+but doesn't actually do anything with it, besides light up a DCD
+light.  That said, this could be a very good starting point to extend
+out.
+
+\subsubsection{Component Count}
+
+WhereAVR does middling-well on component count.  Its biggest gotcha is
+using a switch-mode (boost) power supply, which is really unfortunate
+for newbies.  Happily, this is ancillary to the rest of the design, so
+it can simply be skipped over if desired.
+
+The GPS interface isn't a good fit for our application, either: using
+a 2N3904 level inverter for RS-232 -> TTL is a longstanding tradition,
+but it's a more to learn for newbies than a MAX232 ``Magic converter
+chip'' would be\footnote{That said, this could be a good opportunity
+  to introduce people to using BJTs as switches.}.   Again, this is
+something that can just be cut out.
+
+The audio output is very nice: it uses a 4 bit R/2R DAC to generate
+waveforms.  This is fed into a trimpot for volume control, and
+capactively coupled to the microphone jack.  All in all: good stuff.
+
+\subsubsection{Code Frugality}
+
+This code is pretty good about its resource utilization.  Lots of
+things are done via interrupts, which makes it a little difficult to
+ascertain exactly how much CPU is left after the APRS overhead, but it
+looks to be pretty good.  The memory footprint is also very good by
+today's standards: it was written for the ATMega8, which has a quarter
+the resources of the now-standard ATMega328!
+
+In particular, his use of zero-crossing interrupts to measure input
+frequency is very nice.  That said, the algorithm misses a class of
+important corner case, which causes packet loss.
+
+\subsubsection{Code Readability}
+
+This is where WhereAVR shines.  It's really well-commented,
+well-organized, and, most importantly, very consistent.  It really
+feels like Dion went out of his way to keep the indirect linkages to a
+minimum and the structure clear.
+
+
+\subsubsection{License}
+
+Unfortunately, WhereAVR is released under a very restrictive license
+(but one very common in the Amateur Radio community).
+\begin{quote}
+  This software is available only for non-commercial amateur radio or
+  educational applications.  All other uses are prohibited.  This
+  software may be modified only if the resulting code be made
+  available publicly and the original author(s) given credit.
+\end{quote}
+
+This is, of course, wholly unacceptable for our desired application.
+
+\subsection{Arduino TNC}
+\subsubsection{Missing Features}
+\subsubsection{Component Count}
+\subsubsection{Code Frugality}
+\subsubsection{Code Readability}
+\subsubsection{License}
+
+
+\subsection{BertOS Example code}
+\subsubsection{Missing Features}
+\subsubsection{Component Count}
+\subsubsection{Code Frugality}
+\subsubsection{Code Readability}
+\subsubsection{License}
+
+
+\subsection{Foo}
+\subsubsection{Missing Features}
+\subsubsection{Component Count}
+\subsubsection{Code Frugality}
+\subsubsection{Code Readability}
+\subsubsection{License}
+
+
+\section{Other Implementations Worth Noting}
+
+\subsection{multimon}
+
+multimon\cite{multimon} is a software modem that works with audio data taken from the
+soundcard (``soundmodem'').  It runs on a Linux PC, which is clearly
+not the target platform, but it does provide a platform to test
+against.  As development progressed, multimon proved to be a very
+useful tool for decoding data.
+
+\subsection{OpenTracker+}
+
+The OpenTracker+\cite{opentracker} is the most popular open source
+\aprs tracker out there today.  It uses the HC08 processor, with code
+distributed as a Metroworks CodeWarrior project.  This is something
+everyone can read, but the code is mostly assembler.
+
+
+
+\section{AFSK1200: The physical layer}
+
+\subsection{Description}
+
+AFSK1200 is a subset of the old Bell202 modem standard\cite{ruafsk1200}.
+
+\subsection{Modulation}
+
+To modulate the signal, we use the Atmega328's timer functionality.
+This allows us to set up an interrupt which is called every so many
+clocks.  In this interrupt, we tweak a PWM constant, which is then
+used to output a digital approximation of a sine wave.
+
+
+\subsection{Demodulation}
+
+\section{AX.25: The link layer}
+
+AX.25 is described on wikipedia\cite{WikiAX25}.
+
+\subsection{Encoding}
+\subsection{Decoding}
+
+
+
+\section{HDLC: The data link layer}
+\subsection{Framing}
+\subsection{Receiving}
+
+\section{APRS: The protocol layer}
+
+
+
+\bibliographystyle{plain}
+\bibliography{aprs}
 
 \end{document}
