@@ -5,6 +5,12 @@
 \usepackage{color}
 \usepackage{hyperref}
 
+\usepackage{fullpage}
+
+
+\usepackage{draftwatermark}
+\SetWatermarkScale{4}
+
 % << pygments['pastie.tex'] >>
 
 
@@ -233,7 +239,7 @@ It's very difficult to tell how frugal this code is.  It uses two
 timers, a lot of global variables, and fairly sizeable packet buffer.
 It comes in at somewhere around half a kilobyte of RAM, and looks like
 it will use a fair bit of CPU.  Most importantly, all of the receive
-functionality is implemented within the \texttt{TIMER1_OVF_vect}
+functionality is implemented within the \texttt{ TIMER1\_OVF\_vect }
 handler, with interrupts disabled (and is over 1,000 instructions
 long, firing every 1,200 instructions).  This makes it very difficult
 for auxillary processing to coexist with the code.
