@@ -1,0 +1,18 @@
+
+
+\section{AFSK1200: The physical layer}
+
+\section{Description}
+
+AFSK1200 is a subset of the old Bell202 modem standard\cite{ruafsk1200}.
+
+\section{Modulation}
+
+To modulate the signal, we use the Atmega328's timer functionality.
+This allows us to set up an interrupt which is called every so many
+clocks.  In this interrupt, we tweak a PWM constant, which is then
+used to output a digital approximation of a sine wave.
+
+
+\section{Demodulation}
+
