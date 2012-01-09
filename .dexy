@@ -1,10 +1,11 @@
 {
-    "ArdX25.tex|fn|jinja|latex" : { "allinputs" : true },
+    "ArdX25.tex|fn|jinja|bib|latex" : { "inputs": ["aprs.bib"] },
     "*.h|pyg|l" : {},
     "*.cpp|pyg|l" : {},
     "*.cpp|idio|l" : {},
     "*.cpp|cpp" : {},
     "*-input.txt|dexy" : {},
+    "*.bib|cp" : {},
     "*.css" : {},
     "*.png" : {},
     "*.jpg" : {},
